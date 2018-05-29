@@ -2,6 +2,10 @@ const { get } = require('axios')
 const { load } = require('cheerio')
 const parallel = require('./parallel')
 const { fromString: html_to_text } = require('html-to-text')
+const serial = require('promise-serial')
+const sample = require('lodash.samplesize')
+
+const dev = process.env.NODE_ENV !== 'production'
 
 const host = 'https://www.splanet.com.mx'
 
@@ -66,6 +70,31 @@ const get_categories = async () => {
   return categories
 }
 
+const get_item = async link => {
+  let html
+  html = await get(link)
+  html = html.data
+
+  const elm = load(html)('.main-content-grid')
+
+  let price
+  price = elm.find('.ty-price-num').text().replace('$', '')
+  price = parseFloat(price)
+
+  let inventory
+  inventory = elm.find('.ty-qty-in-stock').text() === 'En stock' ? 5 : 0
+
+  let description
+  description = elm.find('#content_description').html()
+  description = html_to_text(description, { ignoreImage: true, preserveNewlines: true })
+
+  let brand = elm.find('.ty-product-feature__value').text()
+
+  let image = elm.find('a.cm-image-previewer').attr('href')
+
+  return { price, inventory, description, brand, image }
+}
+
 const get_items = async id => {
   const link = [
     host,
@@ -75,7 +104,7 @@ const get_items = async id => {
     `/?sort_by=product`,
     '&sort_order=asc',
     '&layout=short_list',
-    `&items_per_page=100`,
+    `&items_per_page=1000`,
   ].join('')
 
   let html
@@ -93,7 +122,15 @@ const get_items = async id => {
     items.push({ name, id, link })
   })
 
-  // items = [items[1]]
+  if (dev) items = sample(items)
+
+  items = items.map(({ name, id, link }) => async () => {
+    const item = await get_item(link)
+    console.log(`[${id}] ${name}`)
+    return { name, id, ...item, link }
+  })
+
+  items = serial(items, { parallelize: 10 })
 
   return items
 }
@@ -104,12 +141,9 @@ const run = async category => {
 }
 
 (async () => {
-  // const categories = await get_categories()
-
-  const categories = [{
-    name: 'POST-ENTRENOS -> GLUTAMINA',
-    id: 'post-entrenamiento/glutamina'
-  }]
+  let categories
+  categories = await get_categories()
+  if (dev) categories = sample(categories)
 
   parallel(categories.map(cat => () => run(cat)), 1)
 })()
