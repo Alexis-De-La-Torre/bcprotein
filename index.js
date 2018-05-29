@@ -5,6 +5,7 @@ const { fromString: html_to_text } = require('html-to-text')
 const serial = require('promise-serial')
 const sample = require('lodash.samplesize')
 const log_update = require('log-update')
+const { Client: _pg } = require('pg')
 
 const dev = process.env.NODE_ENV !== 'production'
 
@@ -102,7 +103,7 @@ const get_item = async link => {
   return { price, inventory, description, brand, image }
 }
 
-const run = async category => {
+const run = async (pg, category) => {
   const log = name => {
     count_items +=1
 
@@ -125,15 +126,14 @@ const run = async category => {
     percent += 1 / total_categories / total_items
 
     const message = [
-      `[${render_percent()}] [${render_progress_bar()}]`,
+      `[${render_percent()}]`,
       `[${categories_p}] ${category.name}`,
       `[${items_p}] ${name}`,
-    ].join('\n')
+    ].join(' ')
 
-    log_update(message)
+    console.log(message)
+    console.log()
   }
-
-  count_categories += 1  
 
   const link = [
     host,
@@ -161,26 +161,72 @@ const run = async category => {
     items.push({ name, id, link })
   })
 
-  if (dev) items = sample(items, 10)
+  if (dev) items = sample(items, 3)
 
   count_items = 0
   total_items = items.length
 
   items = items.map(({ name, id, link }) => async () => {
-    const item = await get_item(link)
+    let item
+    item = await get_item(link)
+    item = { name, id, ...item, link }
+
+    const query = 'insert into items values ($1, $2, $3, $4, $5, $6, $7, $8, $9)'
+
+    const values = [
+      item.id,
+      item.name,
+      category.name,
+      item.price,
+      item.inventory,
+      item.description,
+      item.brand,
+      item.image,
+      item.link,
+    ]
+
+    if (!dev) await pg.query(query, values)
+    else console.log(query, values)
+
     log(name)
-    return { name, id, ...item, link }
   })
 
-  items = await serial(items, { parallelize: 10 })
+  await serial(items, { parallelize: 5 })
+
+  count_categories += 1
 }
 
 (async () => {
+  const pg = new _pg()
+  await pg.connect()
+
+  const create_q = `
+    create table if not exists items (
+      id text,
+      name text,
+      category text,
+      price numeric,
+      inventory int, 
+      description text,
+      brand text,
+      image text,
+      link text
+    )
+  `
+
+  await pg.query(create_q)
+
+  const delete_q = 'delete from items'
+  if (!dev) await pg.query(delete_q)
+  else console.log(delete_q)
+
   let categories
   categories = await get_categories()
-  if (dev) categories = sample(categories, 3)
+  if (dev) categories = sample(categories, 1)
 
   total_categories = categories.length
 
-  parallel(categories.map(cat => () => run(cat)), 1)
+  parallel(categories.map(cat => () => run(pg, cat)), 1)
+
+  // await pg.end()
 })()
