@@ -4,10 +4,17 @@ const parallel = require('./parallel')
 const { fromString: html_to_text } = require('html-to-text')
 const serial = require('promise-serial')
 const sample = require('lodash.samplesize')
+const log_update = require('log-update')
 
 const dev = process.env.NODE_ENV !== 'production'
 
 const host = 'https://www.splanet.com.mx'
+
+let total_categories
+let total_items
+let count_categories = 0
+let count_items = 0
+let percent = 0
 
 const get_categories = async () => {
   let html
@@ -95,11 +102,43 @@ const get_item = async link => {
   return { price, inventory, description, brand, image }
 }
 
-const get_items = async id => {
+const run = async category => {
+  const log = name => {
+    count_items +=1
+
+    const render_percent = () => (percent * 100).toFixed(2) + '%'
+
+    const render_progress_bar = () => {
+      const length = 20
+      const clamped = Math.ceil(percent * length)
+      let render = ''
+      for (let i = 0; i < length; i++) {
+        if (i <= clamped) render += '='
+        else render += ' '
+      }
+      return render
+    }
+
+    const categories_p = `categories: ${count_categories}/${total_categories}`
+    const items_p = `items: ${count_items}/${total_items}`
+
+    percent += 1 / total_categories / total_items
+
+    const message = [
+      `[${render_percent()}] [${render_progress_bar()}]`,
+      `[${categories_p}] ${category.name}`,
+      `[${items_p}] ${name}`,
+    ].join('\n')
+
+    log_update(message)
+  }
+
+  count_categories += 1  
+
   const link = [
     host,
     '/tienda',
-    `/${id}`,
+    `/${category.id}`,
     `/page-1`,
     `/?sort_by=product`,
     '&sort_order=asc',
@@ -122,28 +161,26 @@ const get_items = async id => {
     items.push({ name, id, link })
   })
 
-  if (dev) items = sample(items)
+  if (dev) items = sample(items, 10)
+
+  count_items = 0
+  total_items = items.length
 
   items = items.map(({ name, id, link }) => async () => {
     const item = await get_item(link)
-    console.log(`[${id}] ${name}`)
+    log(name)
     return { name, id, ...item, link }
   })
 
-  items = serial(items, { parallelize: 10 })
-
-  return items
-}
-
-const run = async category => {
-  const items = await get_items(category.id)
-  console.log(items)
+  items = await serial(items, { parallelize: 10 })
 }
 
 (async () => {
   let categories
   categories = await get_categories()
-  if (dev) categories = sample(categories)
+  if (dev) categories = sample(categories, 3)
+
+  total_categories = categories.length
 
   parallel(categories.map(cat => () => run(cat)), 1)
 })()
