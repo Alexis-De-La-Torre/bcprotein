@@ -1,6 +1,6 @@
 const { get } = require('axios')
 const { load } = require('cheerio')
-const parallel = require('./parallel')
+const parallel = require('../utils/parallel')
 const { fromString: html_to_text } = require('html-to-text')
 const serial = require('promise-serial')
 const sample = require('lodash.samplesize')
