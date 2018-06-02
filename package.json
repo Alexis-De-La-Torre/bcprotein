@@ -8,6 +8,7 @@
     "log-update": "^2.3.0",
     "meli-auth": "https://github.com/Alexis-De-La-Torre/meli-auth.git",
     "pg": "^7.4.3",
-    "promise-serial": "^0.1.5"
+    "promise-serial": "^0.1.5",
+    "ramda": "^0.25.0"
   }
 }

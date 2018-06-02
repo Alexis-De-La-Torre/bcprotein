@@ -4,6 +4,7 @@ const get_token = require('meli-auth')
 const { get, post } = require('axios')
 const parallel = require('../utils/parallel')
 const price = require('../utils/price')
+const R = require('ramda')
 
 const dev = process.env.NODE_ENV !== 'production'
 
